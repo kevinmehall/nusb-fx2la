@@ -8,7 +8,7 @@ async-fs = "2.2.0"
 async-io = "2.6.0"
 futures-lite = "2.6.1"
 log = "0.4.28"
-nusb = { version = "0.2.1", features = ["smol"] }
+nusb = { version = "0.2.7", features = ["smol"] }
 thiserror = "2.0.17"
 
 [dev-dependencies]
