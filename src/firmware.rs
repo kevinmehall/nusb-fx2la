@@ -61,9 +61,9 @@ pub static MODELS: &[Model] = &[
 
 pub async fn get_firmware(filename: &str) -> Result<Vec<u8>, Error> {
     let paths: Vec<PathBuf> = [
-        std::env::var_os("SIGROK_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
+        std::env::var_os("FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
         std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("share/sigrok-firmware").join(filename))),
-        option_env!("COMPILE_TIME_SIGROK_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
+        option_env!("COMPILE_TIME_FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
         Some(Path::new("/usr/local/share/sigrok-firmware").join(filename)),
         Some(Path::new("/usr/share/sigrok-firmware").join(filename)),
     ].into_iter().flatten().collect();
