@@ -8,56 +8,39 @@ pub struct Model {
     pub firmware_filename: &'static str,
 }
 
-pub static MODELS: &[Model] = &[
-    Model {
-        vid: 0x1d50,
-        pid: 0x608c,
-        description: "fx2lafw 8ch",
-        firmware_filename: "fx2lafw-sigrok-fx2-8ch.fw",
-    },
-    Model {
-        vid: 0x1d50,
-        pid: 0x608d,
-        description: "fx2lafw 16ch",
-        firmware_filename: "fx2lafw-sigrok-fx2-16ch.fw",
-    },
-    Model {
-        vid: 0x04b4,
-        pid: 0x8613,
-        description: "Cypress FX2",
-        firmware_filename: "fx2lafw-cypress-fx2.fw",
-    },
-    Model {
-        vid: 0x0925,
-        pid: 0x3881,
-        description: "Saleae Logic",
-        firmware_filename: "fx2lafw-saleae-logic.fw",
-    },
-    Model {
-        vid: 0x08a9,
-        pid: 0x0015,
-        description: "CWAV USBee DX",
-        firmware_filename: "fx2lafw-cwav-usbeedx.fw",
-    },
-    Model {
-        vid: 0x08a9,
-        pid: 0x0009,
-        description: "CWAV USBee SX",
-        firmware_filename: "fx2lafw-cwav-usbeesx.fw",
-    },
-    Model {
-        vid: 0x08a9,
-        pid: 0x0005,
-        description: "CWAV USBee ZX",
-        firmware_filename: "fx2lafw-cwav-usbeezx.fw",
-    },
-    Model {
-        vid: 0x16d0,
-        pid: 0x0498,
-        description: "Braintechnology USB-LPS",
-        firmware_filename: "fx2lafw-braintechnology-usb-lps.fw",
+impl Model {
+    pub fn matches(&self, device: &nusb::DeviceInfo) -> bool {
+        device.vendor_id() == self.vid && device.product_id() == self.pid
     }
-];
+}
+
+macro_rules! models {
+    ($(($vid:expr, $pid:expr, $desc:expr, $fw:expr)),* $(,)?) => {
+        pub static MODELS: &[Model] = &[
+            $(Model {
+                vid: $vid,
+                pid: $pid,
+                description: $desc,
+                firmware_filename: $fw,
+            }),*
+        ];
+
+        pub const SELECTORS: &[nusb::DeviceSelector] = &[
+            $(nusb::DeviceSelector::all().with_vid_pid($vid, $pid)),*
+        ];
+    };
+}
+
+models!(
+    (0x1d50, 0x608c, "FX2-based Logic Analyzer", "fx2lafw-sigrok-fx2-8ch.fw"),
+    (0x1d50, 0x608d, "FX2-based Logic Analyzer", "fx2lafw-sigrok-fx2-16ch.fw"),
+    (0x04b4, 0x8613, "Cypress FX2", "fx2lafw-cypress-fx2.fw"),
+    (0x0925, 0x3881, "Saleae Logic", "fx2lafw-saleae-logic.fw"),
+    (0x08a9, 0x0015, "CWAV USBee DX", "fx2lafw-cwav-usbeedx.fw"),
+    (0x08a9, 0x0009, "CWAV USBee SX", "fx2lafw-cwav-usbeesx.fw"),
+    (0x08a9, 0x0005, "CWAV USBee ZX", "fx2lafw-cwav-usbeezx.fw"),
+    (0x16d0, 0x0498, "Braintechnology USB-LPS", "fx2lafw-braintechnology-usb-lps.fw"),
+);
 
 pub async fn get_firmware(filename: &str) -> Result<Vec<u8>, Error> {
     let paths: Vec<PathBuf> = [

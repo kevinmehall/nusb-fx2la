@@ -6,6 +6,8 @@ use std::{mem, time::Duration};
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Recipient};
 use thiserror::Error;
 
+pub use firmware::{Model, MODELS, SELECTORS};
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("USB error: {0}")]
