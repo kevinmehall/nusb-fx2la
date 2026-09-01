@@ -7,7 +7,7 @@ mod firmware;
 mod fx2;
 mod sample_rate;
 
-pub use firmware::{Model, MODELS, SELECTORS};
+pub use firmware::{Model, MODELS, SELECTORS, FirmwareProvider, DefaultFirmwareProvider};
 pub use sample_rate::SampleRate;
 
 #[derive(Debug, Error)]
@@ -31,28 +31,19 @@ const CMD_START_FLAGS_CLK_48MHZ: u8 = 1 << 6;
 
 impl Device {
     pub async fn open() -> Result<Option<Device>, Error> {
-        let Some((device, model)) = nusb::list_devices()
-            .await?
-            .find_map(|d| {
-                let model = firmware::MODELS
-                    .iter()
-                    .find(|m| m.matches(&d))?;
-                Some((d, model))
-            }) else {
-                return Ok(None);
-            };
+        let Some(device) = nusb::request_device(SELECTORS).await? else {
+            return Ok(None);
+        };
 
-        log::info!("Found {}", model.description);
-
-        Self::from_nusb(device, model).await.map(Some)
+        Self::from_nusb(device, DefaultFirmwareProvider).await.map(Some)
     }
 
-    pub async fn from_nusb(device: nusb::DeviceInfo, model: &Model) -> Result<Device, Error> {
+    pub async fn from_nusb(device: nusb::DeviceInfo, firmware: impl FirmwareProvider) -> Result<Device, Error> {
         let device = if device.product_string() == Some("fx2lafw") {
             log::info!("Device already has fx2lafw firmware loaded");
             device
         } else {
-            let fw_bytes = firmware::get_firmware(model.firmware_filename).await?;
+            let fw_bytes = firmware.get_firmware(&device).await?;
             fx2::load_firmware(device, &fw_bytes).await?
         };
 

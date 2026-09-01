@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::{ops::Deref, path::{Path, PathBuf}};
+use nusb::DeviceInfo;
+
 use super::Error;
 
 pub struct Model {
@@ -42,21 +44,63 @@ models!(
     (0x16d0, 0x0498, "Braintechnology USB-LPS", "fx2lafw-braintechnology-usb-lps.fw"),
 );
 
-pub async fn get_firmware(filename: &str) -> Result<Vec<u8>, Error> {
-    let paths: Vec<PathBuf> = [
-        std::env::var_os("FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
-        std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("share/sigrok-firmware").join(filename))),
-        option_env!("COMPILE_TIME_FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
-        Some(Path::new("/usr/local/share/sigrok-firmware").join(filename)),
-        Some(Path::new("/usr/share/sigrok-firmware").join(filename)),
-    ].into_iter().flatten().collect();
+pub trait FirmwareProvider {
+    type Bytes<'a>: Deref<Target = [u8]> where Self: 'a;
 
-    for path in &paths {
-        if let Ok(data) = async_fs::read(path).await {
-            log::debug!("Loaded firmware from {:?}", path);
-            return Ok(data);
-        }
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + Send + Sync;
+}
+
+impl FirmwareProvider for () {
+    type Bytes<'a> = &'static [u8];
+
+    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+        Err(Error::Other("Device is not running fx2lafw firmware and firmware loading is not available".into()))
     }
+}
 
-    Err(Error::Other(format!("Could not find firmware, tried {:?}", paths)))
+impl FirmwareProvider for [u8] {
+    type Bytes<'a> = &'a [u8];
+
+    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+        Ok(self)
+    }
+}
+
+impl<T: FirmwareProvider> FirmwareProvider for &T {
+    type Bytes<'a> = T::Bytes<'a> where Self: 'a;
+
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + Send + Sync {
+        (*self).get_firmware(device)
+    }
+}
+
+pub struct DefaultFirmwareProvider;
+
+impl FirmwareProvider for DefaultFirmwareProvider {
+    type Bytes<'a> = Vec<u8>;
+
+    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+        let Some(model) = MODELS.iter().find(|m| m.matches(device)) else {
+            return Err(Error::Other(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id())));
+        };
+
+        let filename = model.firmware_filename;
+
+        let paths: Vec<PathBuf> = [
+            std::env::var_os("FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
+            std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("share/sigrok-firmware").join(filename))),
+            option_env!("COMPILE_TIME_FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
+            Some(Path::new("/usr/local/share/sigrok-firmware").join(filename)),
+            Some(Path::new("/usr/share/sigrok-firmware").join(filename)),
+        ].into_iter().flatten().collect();
+
+        for path in &paths {
+            if let Ok(data) = async_fs::read(path).await {
+                log::debug!("Loaded firmware from {:?}", path);
+                return Ok(data);
+            }
+        }
+
+        Err(Error::Other(format!("Could not find firmware, tried {:?}", paths)))
+    }
 }
