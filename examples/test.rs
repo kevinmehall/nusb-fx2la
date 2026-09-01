@@ -14,7 +14,7 @@ fn main() {
 
 async fn capture_to_file(fname: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut out = async_fs::File::create(fname).await?;
-    let dev = fx2la::Device::open().await?;
+    let dev = fx2la::Device::open().await?.ok_or("no device found")?;
 
     let mut capture = dev.start_capture(20_000).await?;
 

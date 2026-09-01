@@ -16,8 +16,6 @@ pub enum Error {
     UsbTransfer(#[from] nusb::transfer::TransferError),
     #[error("{0}")]
     Other(String),
-    #[error("No device found")]
-    NotFound,
 }
 
 pub enum SampleRate {}
@@ -33,19 +31,24 @@ const CMD_START_FLAGS_CLK_30MHZ: u8 = 0 << 6;
 const CMD_START_FLAGS_CLK_48MHZ: u8 = 1 << 6;
 
 impl Device {
-    pub async fn open() -> Result<Device, Error> {
-        let (device, model) = nusb::list_devices()
+    pub async fn open() -> Result<Option<Device>, Error> {
+        let Some((device, model)) = nusb::list_devices()
             .await?
             .find_map(|d| {
                 let model = firmware::MODELS
                     .iter()
-                    .find(|m| d.vendor_id() == m.vid && d.product_id() == m.pid)?;
+                    .find(|m| m.matches(&d))?;
                 Some((d, model))
-            })
-            .ok_or(Error::NotFound)?;
+            }) else {
+                return Ok(None);
+            };
 
         log::info!("Found {}", model.description);
 
+        Self::from_nusb(device, model).await.map(Some)
+    }
+
+    pub async fn from_nusb(device: nusb::DeviceInfo, model: &Model) -> Result<Device, Error> {
         let device = if device.product_string() == Some("fx2lafw") {
             log::info!("Device already has fx2lafw firmware loaded");
             device
