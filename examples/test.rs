@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use futures_lite::{future::block_on, AsyncWriteExt};
+use fx2la::SampleRate;
 
 fn main() {
     env_logger::Builder::from_default_env()
@@ -16,7 +17,7 @@ async fn capture_to_file(fname: &Path) -> Result<(), Box<dyn std::error::Error>>
     let mut out = async_fs::File::create(fname).await?;
     let dev = fx2la::Device::open().await?.ok_or("no device found")?;
 
-    let mut capture = dev.start_capture(20_000).await?;
+    let mut capture = dev.start_capture(SampleRate::from_hz(100_000.0)).await?;
 
     loop {
         let data = capture.read().await?;

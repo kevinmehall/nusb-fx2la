@@ -1,12 +1,14 @@
-mod firmware;
-mod fx2;
-
 use std::{mem, time::Duration};
 
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Recipient};
 use thiserror::Error;
 
+mod firmware;
+mod fx2;
+mod sample_rate;
+
 pub use firmware::{Model, MODELS, SELECTORS};
+pub use sample_rate::SampleRate;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -18,15 +20,12 @@ pub enum Error {
     Other(String),
 }
 
-pub enum SampleRate {}
 
 pub struct Device {
     intf: nusb::Interface,
 }
 
 const CMD_START: u8 = 0xb1;
-
-const MAX_SAMPLE_DELAY: u32 = 6 * 256;
 const CMD_START_FLAGS_CLK_30MHZ: u8 = 0 << 6;
 const CMD_START_FLAGS_CLK_48MHZ: u8 = 1 << 6;
 
@@ -63,21 +62,14 @@ impl Device {
         Ok(Device { intf })
     }
 
-    pub async fn start_capture(&self, sample_rate: u32) -> Result<Capture, Error> {
+    pub async fn start_capture(&self, sample_rate: SampleRate) -> Result<Capture, Error> {
         let mut ep_in = self.intf.endpoint::<Bulk, In>(0x82)?;
 
-        let (base, div, clock_flag) = if 48_000_000 % sample_rate == 0
-            && 48_000_000 / sample_rate <= MAX_SAMPLE_DELAY
-        {
-            (48, 48_000_000 / sample_rate, CMD_START_FLAGS_CLK_48MHZ)
-        } else if 30_000_000 % sample_rate == 0 && 30_000_000 / sample_rate <= MAX_SAMPLE_DELAY {
-            (30, 30_000_000 / sample_rate, CMD_START_FLAGS_CLK_30MHZ)
-        } else {
-            return Err(Error::Other("Unsupported sample rate".to_string()));
+        let flags = match sample_rate.base {
+            sample_rate::BaseClock::Clk48Mhz => CMD_START_FLAGS_CLK_48MHZ,
+            sample_rate::BaseClock::Clk30Mhz => CMD_START_FLAGS_CLK_30MHZ,
         };
-
-        let flags = clock_flag;
-        let [delay_h, delay_l] = ((div - 1) as u16).to_be_bytes();
+        let [delay_h, delay_l] = (sample_rate.divisor - 1).to_be_bytes();
 
         self.intf
             .control_out(
@@ -94,12 +86,14 @@ impl Device {
             .await?;
 
         // Each buffer should be about 10ms of data.
-        let transfer_size = ((sample_rate / 100) as usize).div_ceil(ep_in.max_packet_size())
-            * ep_in.max_packet_size();
+        let transfer_size = ((sample_rate.as_hz() * 0.01) as usize).div_ceil(ep_in.max_packet_size()) * ep_in.max_packet_size();
         let n_transfers = 8;
 
         log::info!(
-            "Started capture at {base}MHz / {div} = {sample_rate}Hz, transfer size {transfer_size}"
+            "Started capture at {base:?} / {div} = {sample_rate}Hz, transfer size {transfer_size}",
+            base = sample_rate.base,
+            div = sample_rate.divisor,
+            sample_rate = sample_rate.as_hz(),
         );
 
         while ep_in.pending() < n_transfers {
@@ -118,7 +112,7 @@ impl Device {
 }
 
 pub struct Capture {
-    sample_rate: u32,
+    sample_rate: SampleRate,
     ep_in: nusb::Endpoint<Bulk, In>,
 
     /// An inactive buffer for the borrowed slice from `read`.
@@ -126,7 +120,7 @@ pub struct Capture {
 }
 
 impl Capture {
-    pub fn sample_rate(&self) -> u32 {
+    pub fn sample_rate(&self) -> SampleRate {
         self.sample_rate
     }
 
