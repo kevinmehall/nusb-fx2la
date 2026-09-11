@@ -18,10 +18,18 @@ async fn capture_to_file(fname: &Path) -> Result<(), Box<dyn std::error::Error>>
     let dev = fx2la::Device::open().await?.ok_or("no device found")?;
 
     let mut capture = dev.start_capture(SampleRate::from_hz(100_000.0)).await?;
+    capture.limit_remaining_samples(200_000);
 
     loop {
         let data = capture.read().await?;
         log::debug!("Recieved {} bytes", data.len());
+
+        if data.is_empty() {
+            break;
+        }
+
         out.write_all(data).await?;
     }
+
+    Ok(())
 }

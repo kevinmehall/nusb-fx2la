@@ -1,4 +1,4 @@
-use std::{mem, time::Duration};
+use std::{mem, time::Duration, u64};
 
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Recipient};
 use thiserror::Error;
@@ -87,7 +87,6 @@ impl Device {
 
         // Each buffer should be about 10ms of data.
         let transfer_size = ((sample_rate.as_hz() * 0.01) as usize).div_ceil(ep_in.max_packet_size()) * ep_in.max_packet_size();
-        let n_transfers = 8;
 
         log::info!(
             "Started capture at {base:?} / {div} = {sample_rate}Hz, transfer size {transfer_size}",
@@ -96,6 +95,7 @@ impl Device {
             sample_rate = sample_rate.as_hz(),
         );
 
+        let n_transfers = 10;
         while ep_in.pending() < n_transfers {
             let buf = ep_in.allocate(transfer_size);
             ep_in.submit(buf);
@@ -107,6 +107,7 @@ impl Device {
             ep_in,
             buffer,
             sample_rate,
+            remaining_transfers: None,
         })
     }
 }
@@ -117,6 +118,8 @@ pub struct Capture {
 
     /// An inactive buffer for the borrowed slice from `read`.
     buffer: Buffer,
+
+    remaining_transfers: Option<u64>,
 }
 
 impl Capture {
@@ -124,12 +127,27 @@ impl Capture {
         self.sample_rate
     }
 
+    pub fn limit_remaining_samples(&mut self, samples: u64) {
+        let transfers = samples.div_ceil(self.buffer.requested_len() as u64)
+            .saturating_sub(self.ep_in.pending() as u64)
+            .min(self.remaining_transfers.unwrap_or(u64::MAX));
+        self.remaining_transfers = Some(transfers);
+    }
+
     pub async fn read(&mut self) -> Result<&[u8], Error> {
+        if self.ep_in.pending() == 0 {
+            return Ok(&[])
+        }
+
         let completion = self.ep_in.next_complete().await;
         completion.status?;
 
         let buf = mem::replace(&mut self.buffer, completion.buffer);
-        self.ep_in.submit(buf);
+
+        if self.remaining_transfers.is_none_or(|s| s > 0) {
+            self.ep_in.submit(buf);
+            if let Some(remaining) = &mut self.remaining_transfers { *remaining -= 1; }
+        }
 
         Ok(&self.buffer[..])
     }
