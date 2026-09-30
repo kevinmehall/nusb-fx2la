@@ -5,7 +5,7 @@ Driver for [fx2lafw](https://sigrok.org/wiki/Fx2lafw) logic analyzers with [nusb
 
 ## Firmware
 
-The fx2lafw firmware is loaded to RAM on the device on the first use after every power cycle. This library looks for the firmware in the following locations in this order:
+The fx2lafw firmware is loaded to the device's RAM on first use each time the device is plugged in. By default, this library looks for the firmware in the following locations in this order:
 
   - `$FX2LAFW_FIRMWARE_DIR`
   - `../share/sigrok-firmware` relative to the executable

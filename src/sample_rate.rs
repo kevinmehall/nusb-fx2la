@@ -17,7 +17,7 @@ impl BaseClock {
     }
 }
 
-/// A sample rate supported by fx2lafw
+/// A sample rate supported by fx2lafw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampleRate {
     pub(crate) base: BaseClock,

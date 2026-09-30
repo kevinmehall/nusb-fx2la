@@ -3,6 +3,8 @@ use nusb::DeviceInfo;
 
 use super::Error;
 
+/// Information about a device model compatible with a specific fx2lafw firmware.
+#[derive(Copy, Clone, Debug)]
 pub struct Model {
     pub vid: u16,
     pub pid: u16,
@@ -11,6 +13,7 @@ pub struct Model {
 }
 
 impl Model {
+    /// Test the VID:PID against a [`nusb::DeviceInfo`]
     pub fn matches(&self, device: &nusb::DeviceInfo) -> bool {
         device.vendor_id() == self.vid && device.product_id() == self.pid
     }
@@ -18,7 +21,13 @@ impl Model {
 
 macro_rules! models {
     ($(($vid:expr, $pid:expr, $desc:expr, $fw:expr)),* $(,)?) => {
-        pub static MODELS: &[Model] = &[
+        /// List of supported device models.
+        ///
+        /// ## Included models
+        $(
+            #[doc = concat!(" - ", $desc, " (", stringify!($vid), ":", stringify!($pid), ")")]
+        )*
+        pub const MODELS: &[Model] = &[
             $(Model {
                 vid: $vid,
                 pid: $pid,
@@ -27,6 +36,7 @@ macro_rules! models {
             }),*
         ];
 
+        /// `nusb` selectors for the devices in [`MODELS`].
         pub const SELECTORS: &[nusb::DeviceSelector] = &[
             $(nusb::DeviceSelector::all().with_vid_pid($vid, $pid)),*
         ];
@@ -44,12 +54,15 @@ models!(
     (0x16d0, 0x0498, "Braintechnology USB-LPS", "fx2lafw-braintechnology-usb-lps.fw"),
 );
 
+/// Trait for choosing and obtaining firmware to load onto a device.
 pub trait FirmwareProvider {
     type Bytes<'a>: Deref<Target = [u8]> where Self: 'a;
 
+    /// Get the firmware for `device`
     fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + Send + Sync;
 }
 
+/// Dummy implementation that fails if the firmware is not already loaded
 impl FirmwareProvider for () {
     type Bytes<'a> = &'static [u8];
 
@@ -58,6 +71,7 @@ impl FirmwareProvider for () {
     }
 }
 
+/// Provide one firmware directly, regardless of device type
 impl FirmwareProvider for [u8] {
     type Bytes<'a> = &'a [u8];
 
@@ -74,8 +88,17 @@ impl<T: FirmwareProvider> FirmwareProvider for &T {
     }
 }
 
+/// Default firmware provider that finds the device in [`MODELS`] and loads firmware from a predefined list of paths.
+///
+/// It looks for the firmware in the following locations in this order:
+/// - `$FX2LAFW_FIRMWARE_DIR`
+/// - `../share/sigrok-firmware` relative to the executable
+/// - `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` resolved at compile time
+/// - `/usr/local/share/sigrok-firmware/` (Unix only)
+/// - `/usr/share/sigrok-firmware/` (Unix only)
 pub struct DefaultFirmwareProvider;
 
+/// Default firmware provider that finds the device in [`MODELS`] and loads firmware from a predefined list of paths.
 impl FirmwareProvider for DefaultFirmwareProvider {
     type Bytes<'a> = Vec<u8>;
 
@@ -90,7 +113,9 @@ impl FirmwareProvider for DefaultFirmwareProvider {
             std::env::var_os("FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
             std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("share/sigrok-firmware").join(filename))),
             option_env!("COMPILE_TIME_FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
+            #[cfg(unix)]
             Some(Path::new("/usr/local/share/sigrok-firmware").join(filename)),
+            #[cfg(unix)]
             Some(Path::new("/usr/share/sigrok-firmware").join(filename)),
         ].into_iter().flatten().collect();
 

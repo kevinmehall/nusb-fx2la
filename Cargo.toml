@@ -2,7 +2,7 @@
 name = "fx2la"
 description = "Driver for FX2-based fx2lafw logic analyzers with nusb"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/kevinmehall/rust-fx2la"
+repository = "https://github.com/kevinmehall/nusb-fx2la"
 version = "0.1.0"
 edition = "2024"
 
