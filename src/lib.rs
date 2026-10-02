@@ -54,6 +54,7 @@
 
 use std::{mem, time::Duration};
 
+use futures_lite::FutureExt;
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Recipient};
 use thiserror::Error;
 
@@ -67,6 +68,9 @@ pub use sample_rate::SampleRate;
 #[cfg(all(any(unix, windows), feature = "fs"))]
 pub use firmware::DefaultFirmwareProvider;
 
+#[cfg(all(any(unix, windows), feature = "fs"))]
+pub use async_io::Timer;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("USB error: {0}")]
@@ -75,6 +79,8 @@ pub enum Error {
     UsbTransfer(#[from] nusb::transfer::TransferError),
     #[error("{0}")]
     Other(String),
+    #[error("Capture interrupted. Try a lower sample rate.")]
+    Timeout,
 }
 
 /// Opened fx2lafw device.
@@ -169,10 +175,13 @@ impl Device {
 
         let buffer = ep_in.allocate(transfer_size);
 
+        let timeout = Timer::after(Duration::from_millis(1000));
+
         Ok(Capture {
             ep_in,
             buffer,
             sample_rate,
+            timeout,
             remaining_transfers: None,
         })
     }
@@ -185,6 +194,9 @@ pub struct Capture {
 
     /// An inactive buffer for the borrowed slice from `read`.
     buffer: Buffer,
+
+    /// If we can't keep up, the FX2 simply stops sending data. Detect this with a timeout reset after receiving each packet.
+    timeout: Timer,
 
     remaining_transfers: Option<u64>,
 }
@@ -213,14 +225,23 @@ impl Capture {
             return Ok(&[])
         }
 
-        let completion = self.ep_in.next_complete().await;
-        completion.status?;
+        let buffer = async {
+            self.ep_in.next_complete().await.into_result().map_err(Error::from)
+        }.or(async {
+            (&mut self.timeout).await;
+            log::warn!("Timeout waiting for data. Capture interupted.");
+            Err(Error::Timeout)
+        }).await?;
 
-        let buf = mem::replace(&mut self.buffer, completion.buffer);
+        let prev_buf = mem::replace(&mut self.buffer, buffer);
 
         if self.remaining_transfers.is_none_or(|s| s > 0) {
-            self.ep_in.submit(buf);
+            self.ep_in.submit(prev_buf);
             if let Some(remaining) = &mut self.remaining_transfers { *remaining -= 1; }
+        }
+
+        if self.ep_in.pending() > 0 {
+            self.timeout.set_after(Duration::from_millis(200));
         }
 
         Ok(&self.buffer[..])
@@ -230,5 +251,28 @@ impl Capture {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown", target_env = "")))]
     pub fn cancel(&mut self) {
         self.ep_in.cancel_all();
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+struct Timer(gloo_timers::future::TimeoutFuture);
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+impl Timer {
+    fn after(duration: Duration) -> Self {
+        Timer(gloo_timers::future::TimeoutFuture::new(duration.as_millis().try_into().unwrap()))
+    }
+
+    fn set_after(&mut self, duration: Duration) {
+        *self = Self::after(duration);
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+impl Future for Timer {
+    type Output = ();
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        self.0.poll(cx)
     }
 }

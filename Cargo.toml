@@ -16,6 +16,9 @@ thiserror = "2.0.17"
 async-fs = { version = "2.2.0", optional = true }
 async-io = "2.6.0"
 
+[target.wasm32-unknown-unknown.dependencies]
+gloo-timers = { version = "0.4.0", features = ["futures"] }
+
 [features]
 fs = ["dep:async-fs"]
 default = ["fs"]
