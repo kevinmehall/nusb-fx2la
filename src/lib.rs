@@ -68,6 +68,9 @@ pub use sample_rate::SampleRate;
 #[cfg(all(any(unix, windows), feature = "fs"))]
 pub use firmware::DefaultFirmwareProvider;
 
+#[cfg(all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+pub use firmware::FetchFirmwareProvider;
+
 #[cfg(all(any(unix, windows), feature = "fs"))]
 pub use async_io::Timer;
 

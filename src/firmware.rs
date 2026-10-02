@@ -54,12 +54,20 @@ models!(
     (0x16d0, 0x0498, "Braintechnology USB-LPS", "fx2lafw-braintechnology-usb-lps.fw"),
 );
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use std::marker::Send as NonWasmSend;
+
+#[cfg(target_arch = "wasm32")]
+pub trait NonWasmSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> NonWasmSend for T {}
+
 /// Trait for choosing and obtaining firmware to load onto a device.
 pub trait FirmwareProvider {
     type Bytes<'a>: Deref<Target = [u8]> where Self: 'a;
 
     /// Get the firmware for `device`
-    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + Send + Sync;
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + NonWasmSend;
 }
 
 /// Dummy implementation that fails if the firmware is not already loaded
@@ -83,7 +91,7 @@ impl FirmwareProvider for [u8] {
 impl<T: FirmwareProvider> FirmwareProvider for &T {
     type Bytes<'a> = T::Bytes<'a> where Self: 'a;
 
-    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + Send + Sync {
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + NonWasmSend {
         (*self).get_firmware(device)
     }
 }
@@ -131,5 +139,47 @@ impl FirmwareProvider for DefaultFirmwareProvider {
         }
 
         Err(Error::Other(format!("Could not find firmware, tried {:?}", paths)))
+    }
+}
+
+/// Firmware provider for WebAssembly that loads firmware from a URL.
+#[cfg(all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+pub struct FetchFirmwareProvider {
+    base_url: String,
+    models: &'static [Model],
+}
+
+#[cfg(all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+impl FetchFirmwareProvider {
+    pub fn new(base_url: String) -> Self {
+        Self { base_url, models: &MODELS }
+    }
+}
+
+#[cfg(all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+impl FirmwareProvider for FetchFirmwareProvider {
+    type Bytes<'a> = Vec<u8>;
+
+    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+        let Some(model) = self.models.iter().find(|m| m.matches(device)) else {
+            return Err(Error::Other(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id())));
+        };
+
+        let slash = if self.base_url.ends_with('/') { "" } else { "/" };
+        let url = format!("{}{}{}", self.base_url, slash, model.firmware_filename);
+
+        log::debug!("Fetching firmware from {url}");
+
+        let resp = gloo_net::http::Request::get(&url).send().await
+            .map_err(|e| Error::Other(format!("Failed to fetch firmware from {url}: {e}")))?;
+
+        if resp.status() != 200 {
+            return Err(Error::Other(format!("Failed to fetch firmware from {url}: HTTP status {}", resp.status())));
+        }
+
+        let bytes = resp.binary().await
+            .map_err(|e| Error::Other(format!("Failed to read firmware from {url}: {e}")))?;
+
+        Ok(bytes)
     }
 }
