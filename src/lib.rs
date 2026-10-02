@@ -61,8 +61,11 @@ mod firmware;
 mod fx2;
 mod sample_rate;
 
-pub use firmware::{Model, MODELS, SELECTORS, FirmwareProvider, DefaultFirmwareProvider};
+pub use firmware::{Model, MODELS, SELECTORS, FirmwareProvider};
 pub use sample_rate::SampleRate;
+
+#[cfg(all(any(unix, windows), feature = "fs"))]
+pub use firmware::DefaultFirmwareProvider;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -85,6 +88,7 @@ const CMD_START_FLAGS_CLK_48MHZ: u8 = 1 << 6;
 
 impl Device {
     /// Open the first available device using the default firmware provider.
+    #[cfg(all(any(target_family = "unix", target_family = "windows"), feature = "fs"))]
     pub async fn open() -> Result<Option<Device>, Error> {
         let Some(device) = nusb::request_device(SELECTORS).await? else {
             return Ok(None);
@@ -223,6 +227,7 @@ impl Capture {
     }
 
     /// Cancel all transfers immediately.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown", target_env = "")))]
     pub fn cancel(&mut self) {
         self.ep_in.cancel_all();
     }

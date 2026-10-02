@@ -1,5 +1,3 @@
-use std::f32;
-
 pub(crate) const MAX_SAMPLE_DELAY: u16 = 6 * 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

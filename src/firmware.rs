@@ -1,4 +1,4 @@
-use std::{ops::Deref, path::{Path, PathBuf}};
+use std::ops::Deref;
 use nusb::DeviceInfo;
 
 use super::Error;
@@ -96,13 +96,17 @@ impl<T: FirmwareProvider> FirmwareProvider for &T {
 /// - `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` resolved at compile time
 /// - `/usr/local/share/sigrok-firmware/` (Unix only)
 /// - `/usr/share/sigrok-firmware/` (Unix only)
+#[cfg(all(any(unix, windows), feature = "fs"))]
 pub struct DefaultFirmwareProvider;
 
 /// Default firmware provider that finds the device in [`MODELS`] and loads firmware from a predefined list of paths.
+#[cfg(all(any(unix, windows), feature = "fs"))]
 impl FirmwareProvider for DefaultFirmwareProvider {
     type Bytes<'a> = Vec<u8>;
 
     async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+        use std::path::{Path, PathBuf};
+
         let Some(model) = MODELS.iter().find(|m| m.matches(device)) else {
             return Err(Error::Other(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id())));
         };

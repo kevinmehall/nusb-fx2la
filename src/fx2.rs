@@ -1,10 +1,6 @@
 use std::time::Duration;
 
-use futures_lite::{FutureExt, StreamExt};
-use nusb::{
-    hotplug::HotplugEvent,
-    transfer::{ControlOut, ControlType, Recipient},
-};
+use nusb::transfer::{ControlOut, ControlType, Recipient};
 
 use crate::Error;
 
@@ -38,7 +34,10 @@ pub async fn load_firmware(
     firmware: &[u8],
 ) -> Result<nusb::DeviceInfo, Error> {
     log::info!("Loading firmware to device");
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown", target_env = "")))]
     let mut events = nusb::watch_devices()?;
+
     let dev = di.open().await?;
     let intf = dev.claim_interface(0).await?;
 
@@ -53,30 +52,41 @@ pub async fn load_firmware(
     drop(intf);
     drop(dev);
 
-    async {
-        loop {
-            match events.next().await.unwrap() {
-                HotplugEvent::Disconnected(disconnected) if di.id() == disconnected => {
-                    log::info!("Device disconnected after firmware load");
+    cfg_select! {
+        all(target_arch = "wasm32", target_os = "unknown", target_env = "") => {
+            // FX2 devices don't have a serial number, so WebUSB can't track them across firmware load
+            // and require prompting for the device again. This requires user interaction.
+            Err(Error::Other("Device disconnected after loading firmware. Select the device again.".to_string()))
+        }
+        _ => {
+            use futures_lite::{FutureExt, StreamExt};
+            use nusb::hotplug::HotplugEvent;
+            async {
+                loop {
+                    match events.next().await.unwrap() {
+                        HotplugEvent::Disconnected(disconnected) if di.id() == disconnected => {
+                            log::info!("Device disconnected after firmware load");
+                        }
+                        HotplugEvent::Connected(connected)
+                            if di.bus_id() == connected.bus_id()
+                                && di.port_chain() == connected.port_chain()
+                                && di.vendor_id() == connected.vendor_id()
+                                && connected.product_id() == connected.product_id() =>
+                        {
+                            log::info!("Device reconnected after firmware load");
+                            break Ok(connected);
+                        }
+                        _ => {}
+                    }
                 }
-                HotplugEvent::Connected(connected)
-                    if di.bus_id() == connected.bus_id()
-                        && di.port_chain() == connected.port_chain()
-                        && di.vendor_id() == connected.vendor_id()
-                        && connected.product_id() == connected.product_id() =>
-                {
-                    log::info!("Device reconnected after firmware load");
-                    break Ok(connected);
-                }
-                _ => {}
             }
+            .race(async {
+                async_io::Timer::after(Duration::from_secs(5)).await;
+                Err(Error::Other(
+                    "Timeout waiting for device to reconnect after firmware load".into(),
+                ))
+            })
+            .await
         }
     }
-    .race(async {
-        async_io::Timer::after(Duration::from_secs(5)).await;
-        Err(Error::Other(
-            "Timeout waiting for device to reconnect after firmware load".into(),
-        ))
-    })
-    .await
 }
