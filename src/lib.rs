@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg(hide(docsrs))))]
 //! Driver for [fx2lafw](https://sigrok.org/wiki/Fx2lafw) logic analyzers with [nusb](https://github.com/kevinmehall/nusb).
 //!
 //! See [`MODELS`] for the list of supported devices.
@@ -65,14 +67,14 @@ mod sample_rate;
 pub use firmware::{Model, MODELS, SELECTORS, FirmwareProvider};
 pub use sample_rate::SampleRate;
 
-#[cfg(all(any(unix, windows), feature = "fs"))]
+#[cfg(any(docsrs, all(any(unix, windows), feature = "fs")))]
 pub use firmware::DefaultFirmwareProvider;
 
-#[cfg(all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = ""))]
+#[cfg(any(docsrs, all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = "")))]
 pub use firmware::FetchFirmwareProvider;
 
 #[cfg(all(any(unix, windows), feature = "fs"))]
-pub use async_io::Timer;
+use async_io::Timer;
 
 #[derive(Debug, Error)]
 pub enum Error {
