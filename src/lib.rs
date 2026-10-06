@@ -54,7 +54,7 @@
 //! sudo apt install sigrok-firmware-fx2lafw
 //! ```
 
-use std::{mem, time::Duration};
+use std::{mem, time::Duration, error::Error};
 
 use futures_lite::FutureExt;
 use nusb::transfer::{Buffer, Bulk, ControlOut, ControlType, In, Recipient};
@@ -76,14 +76,27 @@ pub use firmware::FetchFirmwareProvider;
 #[cfg(all(any(unix, windows), feature = "fs"))]
 use async_io::Timer;
 
+/// Errors from initialization.
 #[derive(Debug, Error)]
-pub enum Error {
+#[non_exhaustive]
+pub enum InitError {
     #[error("USB error: {0}")]
     Usb(#[from] nusb::Error),
     #[error("USB transfer error: {0}")]
     UsbTransfer(#[from] nusb::transfer::TransferError),
     #[error("{0}")]
-    Other(String),
+    GetFirmware(#[from] Box<dyn Error>),
+    #[error("Device didn't reconnect after firmware load.")]
+    ReconnectAfterFirmwareLoad,
+
+}
+
+/// Errors during an active capture
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum CaptureError {
+    #[error("USB transfer error: {0}")]
+    UsbTransfer(#[from] nusb::transfer::TransferError),
     #[error("Capture interrupted. Try a lower sample rate.")]
     Timeout,
 }
@@ -100,7 +113,7 @@ const CMD_START_FLAGS_CLK_48MHZ: u8 = 1 << 6;
 impl Device {
     /// Open the first available device using the default firmware provider.
     #[cfg(all(any(target_family = "unix", target_family = "windows"), feature = "fs"))]
-    pub async fn open() -> Result<Option<Device>, Error> {
+    pub async fn open() -> Result<Option<Device>, InitError> {
         let Some(device) = nusb::request_device(SELECTORS).await? else {
             return Ok(None);
         };
@@ -121,7 +134,7 @@ impl Device {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// # };
     /// ```
-    pub async fn from_nusb(device: nusb::DeviceInfo, firmware: impl FirmwareProvider) -> Result<Device, Error> {
+    pub async fn from_nusb(device: nusb::DeviceInfo, firmware: impl FirmwareProvider) -> Result<Device, InitError> {
         let device = if device.product_string() == Some("fx2lafw") {
             log::info!("Device already has fx2lafw firmware loaded");
             device
@@ -139,7 +152,7 @@ impl Device {
     /// Start capturing data at the specified sample rate.
     ///
     /// An error will be returned if another [`Capture`] currently exists for this device.
-    pub async fn start_capture(&self, sample_rate: SampleRate) -> Result<Capture, Error> {
+    pub async fn start_capture(&self, sample_rate: SampleRate) -> Result<Capture, InitError> {
         let mut ep_in = self.intf.endpoint::<Bulk, In>(0x82)?;
 
         let flags = match sample_rate.base {
@@ -230,17 +243,17 @@ impl Capture {
     /// Read samples.
     ///
     /// An empty array will be returned when the capture has reached the [configured sample limit][Capture::limit_remaining_samples].
-    pub async fn read(&mut self) -> Result<&[u8], Error> {
+    pub async fn read(&mut self) -> Result<&[u8], CaptureError> {
         if self.ep_in.pending() == 0 {
             return Ok(&[])
         }
 
         let buffer = async {
-            self.ep_in.next_complete().await.into_result().map_err(Error::from)
+            self.ep_in.next_complete().await.into_result().map_err(CaptureError::from)
         }.or(async {
             (&mut self.timeout).await;
             log::warn!("Timeout waiting for data. Capture interupted.");
-            Err(Error::Timeout)
+            Err(CaptureError::Timeout)
         }).await?;
 
         let prev_buf = mem::replace(&mut self.buffer, buffer);

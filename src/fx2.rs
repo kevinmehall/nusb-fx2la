@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use nusb::transfer::{ControlOut, ControlType, Recipient};
 
-use crate::Error;
+use crate::InitError;
 
 /// Poke data into FX2 RAM
-async fn fx2_write(intf: &nusb::Interface, addr: u16, data: &[u8]) -> Result<(), Error> {
+async fn fx2_write(intf: &nusb::Interface, addr: u16, data: &[u8]) -> Result<(), InitError> {
     intf.control_out(
         ControlOut {
             control_type: ControlType::Vendor,
@@ -24,7 +24,7 @@ async fn fx2_write(intf: &nusb::Interface, addr: u16, data: &[u8]) -> Result<(),
 const CPUCS: u16 = 0xe600;
 
 /// Assert or deassert the FX2 CPU reset
-async fn fx2_reset_cpu(intf: &nusb::Interface, reset: bool) -> Result<(), Error> {
+async fn fx2_reset_cpu(intf: &nusb::Interface, reset: bool) -> Result<(), InitError> {
     fx2_write(intf, CPUCS, &[reset as u8]).await
 }
 
@@ -32,7 +32,7 @@ async fn fx2_reset_cpu(intf: &nusb::Interface, reset: bool) -> Result<(), Error>
 pub async fn load_firmware(
     di: nusb::DeviceInfo,
     firmware: &[u8],
-) -> Result<nusb::DeviceInfo, Error> {
+) -> Result<nusb::DeviceInfo, InitError> {
     log::info!("Loading firmware to device");
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown", target_env = "")))]
@@ -56,7 +56,7 @@ pub async fn load_firmware(
         all(target_arch = "wasm32", target_os = "unknown", target_env = "") => {
             // FX2 devices don't have a serial number, so WebUSB can't track them across firmware load
             // and require prompting for the device again. This requires user interaction.
-            Err(Error::Other("Device disconnected after loading firmware. Select the device again.".to_string()))
+            Err(InitError::ReconnectAfterFirmwareLoad)
         }
         _ => {
             use futures_lite::{FutureExt, StreamExt};
@@ -82,9 +82,7 @@ pub async fn load_firmware(
             }
             .or(async {
                 async_io::Timer::after(Duration::from_secs(5)).await;
-                Err(Error::Other(
-                    "Timeout waiting for device to reconnect after firmware load".into(),
-                ))
+                Err(InitError::ReconnectAfterFirmwareLoad)
             })
             .await
         }

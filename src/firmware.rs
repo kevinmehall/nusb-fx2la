@@ -1,7 +1,5 @@
-use std::ops::Deref;
+use std::{ops::Deref, error::Error};
 use nusb::DeviceInfo;
-
-use super::Error;
 
 /// Information about a device model compatible with a specific fx2lafw firmware.
 #[derive(Copy, Clone, Debug)]
@@ -67,15 +65,15 @@ pub trait FirmwareProvider {
     type Bytes<'a>: Deref<Target = [u8]> where Self: 'a;
 
     /// Get the firmware for `device`
-    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + NonWasmSend;
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Box<dyn Error>>> + NonWasmSend;
 }
 
 /// Dummy implementation that fails if the firmware is not already loaded
 impl FirmwareProvider for () {
     type Bytes<'a> = &'static [u8];
 
-    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
-        Err(Error::Other("Device is not running fx2lafw firmware and firmware loading is not available".into()))
+    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Box<dyn Error>> {
+        Err("Device is not running fx2lafw firmware and firmware loading is not available".into())
     }
 }
 
@@ -83,7 +81,7 @@ impl FirmwareProvider for () {
 impl FirmwareProvider for [u8] {
     type Bytes<'a> = &'a [u8];
 
-    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+    async fn get_firmware<'a>(&'a self, _device: &DeviceInfo) -> Result<Self::Bytes<'a>, Box<dyn Error>> {
         Ok(self)
     }
 }
@@ -91,7 +89,7 @@ impl FirmwareProvider for [u8] {
 impl<T: FirmwareProvider> FirmwareProvider for &T {
     type Bytes<'a> = T::Bytes<'a> where Self: 'a;
 
-    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Error>> + NonWasmSend {
+    fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> impl Future<Output = Result<Self::Bytes<'a>, Box<dyn Error>>> + NonWasmSend {
         (*self).get_firmware(device)
     }
 }
@@ -112,11 +110,11 @@ pub struct DefaultFirmwareProvider;
 impl FirmwareProvider for DefaultFirmwareProvider {
     type Bytes<'a> = Vec<u8>;
 
-    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Box<dyn Error>> {
         use std::path::{Path, PathBuf};
 
         let Some(model) = MODELS.iter().find(|m| m.matches(device)) else {
-            return Err(Error::Other(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id())));
+            return Err(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id()).into());
         };
 
         let filename = model.firmware_filename;
@@ -138,7 +136,7 @@ impl FirmwareProvider for DefaultFirmwareProvider {
             }
         }
 
-        Err(Error::Other(format!("Could not find firmware, tried {:?}", paths)))
+        Err(format!("Could not find firmware, tried {:?}", paths).into())
     }
 }
 
@@ -160,9 +158,9 @@ impl FetchFirmwareProvider {
 impl FirmwareProvider for FetchFirmwareProvider {
     type Bytes<'a> = Vec<u8>;
 
-    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Box<dyn Error>> {
         let Some(model) = self.models.iter().find(|m| m.matches(device)) else {
-            return Err(Error::Other(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id())));
+            return Err(format!("No matching firmware found for {:04X}:{:04X}", device.vendor_id(), device.product_id()).into());
         };
 
         let slash = if self.base_url.ends_with('/') { "" } else { "/" };
@@ -171,14 +169,14 @@ impl FirmwareProvider for FetchFirmwareProvider {
         log::debug!("Fetching firmware from {url}");
 
         let resp = gloo_net::http::Request::get(&url).send().await
-            .map_err(|e| Error::Other(format!("Failed to fetch firmware from {url}: {e}")))?;
+            .map_err(|e| format!("Failed to fetch firmware from {url}: {e}"))?;
 
         if resp.status() != 200 {
-            return Err(Error::Other(format!("Failed to fetch firmware from {url}: HTTP status {}", resp.status())));
+            return Err(format!("Failed to fetch firmware from {url}: HTTP status {}", resp.status()).into());
         }
 
         let bytes = resp.binary().await
-            .map_err(|e| Error::Other(format!("Failed to read firmware from {url}: {e}")))?;
+            .map_err(|e| format!("Failed to read firmware from {url}: {e}"))?;
 
         Ok(bytes)
     }
@@ -188,7 +186,7 @@ impl FirmwareProvider for FetchFirmwareProvider {
 impl FirmwareProvider for FetchFirmwareProvider {
     type Bytes<'a> = Vec<u8>;
 
-    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Error> {
+    async fn get_firmware<'a>(&'a self, device: &DeviceInfo) -> Result<Self::Bytes<'a>, Box<dyn Error>> {
        unimplemented!();
     }
 }
