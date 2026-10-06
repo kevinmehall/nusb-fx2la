@@ -121,7 +121,7 @@ impl FirmwareProvider for DefaultFirmwareProvider {
 
         let paths: Vec<PathBuf> = [
             std::env::var_os("FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(&dir).join(filename)),
-            std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("share/sigrok-firmware").join(filename))),
+            std::env::current_exe().ok().and_then(|exe| exe.parent().and_then(|d| d.parent()).map(|p| p.join("share/sigrok-firmware").join(filename))),
             option_env!("COMPILE_TIME_FX2LAFW_FIRMWARE_DIR").map(|dir| Path::new(dir).join(filename)),
             #[cfg(unix)]
             Some(Path::new("/usr/local/share/sigrok-firmware").join(filename)),
