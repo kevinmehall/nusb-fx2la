@@ -161,7 +161,12 @@ impl Device {
             .await?;
 
         // Each buffer should be about 10ms of data.
-        let transfer_size = ((sample_rate.as_hz() * 0.01) as usize).div_ceil(ep_in.max_packet_size()) * ep_in.max_packet_size();
+        let samples_per_buffer = (sample_rate.as_hz() * 0.01) as usize;
+        let transfer_size = if samples_per_buffer < 4096 {
+            samples_per_buffer.div_ceil(ep_in.max_packet_size()) * ep_in.max_packet_size()
+        } else {
+            samples_per_buffer.div_ceil(4096) * 4096
+        };
 
         log::info!(
             "Started capture at {base:?} / {div} = {sample_rate}Hz, transfer size {transfer_size}",
@@ -170,7 +175,7 @@ impl Device {
             sample_rate = sample_rate.as_hz(),
         );
 
-        let n_transfers = 10;
+        let n_transfers = 16;
         while ep_in.pending() < n_transfers {
             let buf = ep_in.allocate(transfer_size);
             ep_in.submit(buf);

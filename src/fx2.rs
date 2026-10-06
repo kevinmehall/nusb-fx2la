@@ -80,7 +80,7 @@ pub async fn load_firmware(
                     }
                 }
             }
-            .race(async {
+            .or(async {
                 async_io::Timer::after(Duration::from_secs(5)).await;
                 Err(Error::Other(
                     "Timeout waiting for device to reconnect after firmware load".into(),
