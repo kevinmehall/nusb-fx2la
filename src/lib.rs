@@ -73,7 +73,7 @@ pub use firmware::DefaultFirmwareProvider;
 #[cfg(any(docsrs, all(feature = "web-fetch", target_arch = "wasm32", target_os = "unknown", target_env = "")))]
 pub use firmware::FetchFirmwareProvider;
 
-#[cfg(all(any(unix, windows), feature = "fs"))]
+#[cfg(all(any(unix, windows)))]
 use async_io::Timer;
 
 /// Errors from initialization.

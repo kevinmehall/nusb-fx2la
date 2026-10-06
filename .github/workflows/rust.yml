@@ -1,0 +1,46 @@
+name: Rust
+
+on:
+  push:
+    branches: "*"
+  pull_request:
+    branches: "*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Run tests
+      run: |
+        cargo test
+        cargo check --no-default-features
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: check
+      run: |
+        cargo check
+        cargo check --no-default-features
+
+  rustdoc:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Install toolchain
+      uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+      with:
+        toolchain: nightly
+    - name: rustdoc
+      run: RUSTDOCFLAGS=--cfg=docsrs cargo +nightly doc --all-features --no-deps
