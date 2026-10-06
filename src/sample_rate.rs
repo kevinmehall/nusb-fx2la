@@ -39,12 +39,12 @@ impl SampleRate {
         if (c30.as_hz() - sample_rate).abs() < (c48.as_hz() - sample_rate).abs() { c30 } else { c48 }
     }
 
-    /// Get the rate in Hz
+    /// Get the rate in Hz.
     pub fn as_hz(&self) -> f32 {
         self.base.as_hz() / (self.divisor as f32)
     }
 
-    /// Get the rate in Hz, expressed as a (numerator, denominator) fraction
+    /// Get the rate in Hz, expressed as a (numerator, denominator) fraction.
     pub fn as_hz_ratio(&self) -> (u32, u32) {
         (self.base.as_hz() as u32, self.divisor as u32)
     }

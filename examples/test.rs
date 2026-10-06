@@ -22,7 +22,7 @@ async fn capture_to_file(fname: &Path) -> Result<(), Box<dyn std::error::Error>>
 
     loop {
         let data = capture.read().await?;
-        log::debug!("Recieved {} bytes", data.len());
+        log::debug!("Received {} bytes", data.len());
 
         if data.is_empty() {
             break;

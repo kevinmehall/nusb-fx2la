@@ -1,19 +1,15 @@
 fx2la
 -----
 
+[Documentation](https://docs.rs/fx2la) | [Releases](https://github.com/kevinmehall/nusb-fx2la/releases)
+
 Driver for [fx2lafw](https://sigrok.org/wiki/Fx2lafw) logic analyzers with [nusb](https://github.com/kevinmehall/nusb).
 
 ## Firmware
 
-The fx2lafw firmware is loaded to the device's RAM on first use each time the device is plugged in. By default, this library looks for the firmware in the following locations in this order:
+The fx2lafw firmware is loaded to the device's RAM on first use each time the device is plugged in. The default firmware provider looks for firmware in common filesystem locations as well as the directories specified by the environment variables `$FX2LAFW_FIRMWARE_DIR` (at runtime) and `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` (at compile time).
 
-  - `$FX2LAFW_FIRMWARE_DIR`
-  - `../share/sigrok-firmware` relative to the executable
-  - `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` resolved at compile time
-  - `/usr/local/share/sigrok-firmware/`
-  - `/usr/share/sigrok-firmware/`
-
-Firmware binaries can be downloaded [here](https://sigrok.org/download/binary/sigrok-firmware-fx2lafw/) or via your package manager:
+Firmware binaries can be downloaded [from the Sigrok project](https://sigrok.org/download/binary/sigrok-firmware-fx2lafw/) or via your package manager:
 
 ### Nix (run-time)
 

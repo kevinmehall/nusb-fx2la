@@ -32,7 +32,8 @@
 //! ## Firmware
 //!
 //! The fx2lafw firmware is loaded to the device's RAM on first use each time the device is plugged in.
-//! The [default firmware provider][`DefaultFirmwareProvider`] looks for firmware in common filesystem locations as well as the directories specified by the `$FX2LAFW_FIRMWARE_DIR` and `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` environment variables.
+//! The [`DefaultFirmwareProvider`] looks for firmware in common filesystem locations as well as the directories specified by the environment variables `$FX2LAFW_FIRMWARE_DIR` (at runtime) and `$COMPILE_TIME_FX2LAFW_FIRMWARE_DIR` (at compile time).
+//! For WebAssembly, the [`FetchFirmwareProvider`] can download firmware relative to a specified base URL.
 //!
 //! Firmware binaries can be [downloaded from the Sigrok project](https://sigrok.org/download/binary/sigrok-firmware-fx2lafw/) or via your package manager:
 //!
@@ -252,7 +253,7 @@ impl Capture {
             self.ep_in.next_complete().await.into_result().map_err(CaptureError::from)
         }.or(async {
             (&mut self.timeout).await;
-            log::warn!("Timeout waiting for data. Capture interupted.");
+            log::warn!("Timeout waiting for data. Capture interrupted.");
             Err(CaptureError::Timeout)
         }).await?;
 
